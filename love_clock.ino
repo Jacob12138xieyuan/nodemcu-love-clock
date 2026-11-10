@@ -1,6 +1,7 @@
 // 爱的小时钟：NodeMCU(ESP8266) + 1.3 寸 ST7789 IPS 屏
 // 页面轮播：时钟天气 / 在一起天数 / 倒数日 / 照片 / 情话，纪念日当天全屏庆祝
-// 所有设置（含 Wi-Fi）都在手机网页里完成，见 README.md
+// 所有设置（含 Wi-Fi，最多记住最近 3 个）都在手机网页里完成，见 README.md
+// 连按两次板子上的 RST 键（3 秒内）：进入配网模式，只开热点
 #include <ESP8266WiFi.h>
 #include <LittleFS.h>
 #include "config_store.h"
@@ -24,7 +25,7 @@ void handleButton() {
     if (millis() - btnDown > 5000) {
       LittleFS.remove("/wifi.json");
       cfg.pass[0] = 0; saveConfig();
-      drawMsg("已清除 Wi-Fi 和密码", "正在重启…");
+      drawMsg(TR("已清除 Wi-Fi 和密码", "Wi-Fi & password cleared"), TR("正在重启…", "Restarting..."));
       delay(800);
       ESP.restart();
     }
@@ -32,6 +33,7 @@ void handleButton() {
 }
 
 void setup() {
+  drArm();   // 检测是否连按了两次 RST（连按则只开热点，不连路由器）
   Serial.begin(115200);
   if (!LittleFS.begin()) { LittleFS.format(); LittleFS.begin(); }
   loadConfig();
@@ -47,6 +49,7 @@ void setup() {
 void loop() {
   uint32_t now = millis();
   netLoop();
+  drTick();
   handleButton();
   if (gRestartAt && now > gRestartAt) ESP.restart();
 
@@ -74,12 +77,12 @@ void loop() {
 
   switch (mode) {
     case M_SETUP:
-      if (needFull) { needFull = false; drawMsg("请连接热点", AP_NAME, "浏览器打开", "192.168.4.1"); }
+      if (needFull) { needFull = false; drawMsg(TR("请连接热点", "Connect to hotspot"), AP_NAME, TR("浏览器打开", "then open"), "192.168.4.1"); }
       break;
     case M_INFO:
       if (needFull) {
         needFull = false;
-        drawMsg("Wi-Fi 已连接", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), "love-clock.local");
+        drawMsg(TR("Wi-Fi 已连接", "Wi-Fi connected"), WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), "love-clock.local");
       }
       break;
     case M_CELEB:

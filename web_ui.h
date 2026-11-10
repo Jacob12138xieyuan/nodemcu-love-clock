@@ -182,17 +182,30 @@ void hWifiSet() {
   if (deserializeJson(d, server.arg("plain")) != DeserializationError::Ok) { server.send(400, "text/plain", "bad json"); return; }
   const char* s = d["s"] | "";
   if (!*s) { server.send(400, "text/plain", "no ssid"); return; }
-  safeCopy(wifiSsid, sizeof wifiSsid, s);
-  safeCopy(wifiPass, sizeof wifiPass, d["p"] | "");
-  saveWifi();
+  addWifi(s, d["p"] | "");
   WiFi.disconnect();
-  WiFi.begin(wifiSsid, wifiPass);
+  WiFi.begin(wifis[0].s, wifis[0].p);
   staDownSince = millis();
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+void hWifiList() {
+  REQUIRE_AUTH;
+  DynamicJsonDocument d(512);
+  JsonArray a = d.createNestedArray("list");
+  for (uint8_t i = 0; i < nWifi; i++) a.add(wifis[i].s);
+  String out; serializeJson(d, out);
+  server.send(200, "application/json", out);
+}
+void hWifiDel() {
+  REQUIRE_AUTH;
+  StaticJsonDocument<64> d;
+  if (deserializeJson(d, server.arg("plain")) != DeserializationError::Ok) { server.send(400, "text/plain", "bad json"); return; }
+  removeWifi((uint8_t)(d["i"] | 255));
   server.send(200, "application/json", "{\"ok\":true}");
 }
 void hWifiForget() {
   REQUIRE_AUTH;
-  LittleFS.remove("/wifi.json");
+  nWifi = 0; saveWifi();
   server.send(200, "application/json", "{\"ok\":true}");
   gRestartAt = millis() + 800;
 }
@@ -220,6 +233,8 @@ void webInit() {
   server.on("/ph", HTTP_GET, hPhotoGet);
   server.on("/api/wifi/scan", HTTP_GET, hWifiScan);
   server.on("/api/wifi", HTTP_POST, hWifiSet);
+  server.on("/api/wifi/list", HTTP_GET, hWifiList);
+  server.on("/api/wifi/del", HTTP_POST, hWifiDel);
   server.on("/api/wifi/forget", HTTP_POST, hWifiForget);
   server.onNotFound(hNotFound);
   server.begin();
@@ -228,16 +243,36 @@ void webInit() {
 // mDNS 只在连上路由器后再启动，只有热点时启动它在部分版本上不稳定
 bool mdnsOn = false;
 
+bool forcedSetup = false;   // 连按两次 RST 进入的配网模式
+
+// 先扫描一次，按“最近使用”的顺序依次尝试周围能搜到的已保存 Wi-Fi
+bool connectSaved() {
+  WiFi.mode(WIFI_STA);
+  drawMsg(TR("正在搜索 Wi-Fi", "Searching Wi-Fi..."));
+  int found = WiFi.scanNetworks();
+  uint8_t order[MAX_WIFI], n = 0;
+  for (uint8_t i = 0; i < nWifi; i++)
+    for (int k = 0; k < found; k++)
+      if (WiFi.SSID(k) == wifis[i].s) { order[n++] = i; break; }
+  WiFi.scanDelete();
+  if (!n) { order[0] = 0; n = 1; }   // 一个都没搜到（可能是隐藏网络）：只试最近的那个
+  for (uint8_t j = 0; j < n; j++) {
+    WiFi.begin(wifis[order[j]].s, wifis[order[j]].p);
+    drawMsg(TR("正在连接 Wi-Fi", "Connecting Wi-Fi..."), wifis[order[j]].s);
+    uint32_t t0 = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - t0 < 12000) { delay(200); drTick(); }
+    if (WiFi.status() == WL_CONNECTED) return true;
+    WiFi.disconnect();
+  }
+  return false;
+}
+
 void netInit() {
   WiFi.persistent(false);
   WiFi.hostname(MDNS_NAME);
-  if (!wifiSsid[0]) { startAP(); return; }
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(wifiSsid, wifiPass);
-  drawMsg("正在连接 Wi-Fi", wifiSsid);
-  uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 20000) delay(200);
-  if (WiFi.status() != WL_CONNECTED) startAP();   // 连不上就开热点，等待重新配置
+  if (gDoubleReset) { forcedSetup = true; startAP(); return; }
+  if (!nWifi) { startAP(); return; }
+  if (!connectSaved()) startAP();   // 都连不上就开热点，等待重新配置
 }
 
 void netLoop() {
@@ -245,6 +280,7 @@ void netLoop() {
   if (apActive) dns.processNextRequest();
   uint32_t now = millis();
   if (mdnsOn) MDNS.update();
+  if (forcedSetup && now > 300000 && WiFi.status() != WL_CONNECTED) ESP.restart();   // 配网模式 5 分钟没人操作，自动回到正常模式
   if (WiFi.status() == WL_CONNECTED) {
     if (!mdnsOn) {
       mdnsOn = MDNS.begin(MDNS_NAME);
@@ -256,6 +292,6 @@ void netLoop() {
   } else {
     staUpSince = 0;
     if (!staDownSince) staDownSince = now ? now : 1;
-    if (!apActive && wifiSsid[0] && now - staDownSince > 120000) startAP();   // 断网超过 2 分钟，重新开热点
+    if (!apActive && nWifi && now - staDownSince > 120000) startAP();   // 断网超过 2 分钟，重新开热点
   }
 }

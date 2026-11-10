@@ -17,6 +17,7 @@ struct Config {
   uint8_t slideSec = 8;                          // 每页停留秒数
   uint8_t nightStart = 22, nightEnd = 7;         // 夜间时段
   uint8_t bright = 100, nightBright = 10;        // 亮度百分比
+  uint8_t lang = 0;                              // 0=中文 1=English，屏幕和网页共用
   char  pass[16] = "";                           // 设置页密码，空表示不设
   char  testDate[11] = "";                       // 测试用：假装今天是这一天
   EventItem ev[MAX_EVENTS]; uint8_t nEv = 0;
@@ -24,7 +25,15 @@ struct Config {
 };
 
 Config cfg;
-char wifiSsid[33] = "", wifiPass[65] = "";
+// 最近使用的 Wi-Fi，最多 3 个，下标 0 是最近一次
+#define MAX_WIFI 3
+struct WifiEntry { char s[33]; char p[65]; };
+WifiEntry wifis[MAX_WIFI];
+uint8_t nWifi = 0;
+
+// 界面语言：TR(中文, English) 按当前语言选择文字
+#define EN() (cfg.lang == 1)
+#define TR(zh, en) (cfg.lang == 1 ? (en) : (zh))
 
 // 其他模块使用的标志
 volatile bool gConfigChanged = false;   // 设置被保存过
@@ -74,6 +83,7 @@ void applyJson(JsonObject o) {
   if (o.containsKey("nightEnd")) cfg.nightEnd = constrain((int)(o["nightEnd"] | 7), 0, 23);
   if (o.containsKey("bright")) cfg.bright = constrain((int)(o["bright"] | 100), 5, 100);
   if (o.containsKey("nightBright")) cfg.nightBright = constrain((int)(o["nightBright"] | 10), 0, 100);
+  if (o.containsKey("lang")) cfg.lang = constrain((int)(o["lang"] | 0), 0, 1);
   if (o.containsKey("pass")) safeCopy(cfg.pass, sizeof cfg.pass, o["pass"] | "");
   if (o.containsKey("newPass")) safeCopy(cfg.pass, sizeof cfg.pass, o["newPass"] | "");
   if (o.containsKey("testDate")) {
@@ -123,6 +133,7 @@ void buildJson(DynamicJsonDocument& d, bool forWeb) {
   d["bright"] = cfg.bright;
   d["nightBright"] = cfg.nightBright;
   d["testDate"] = cfg.testDate;
+  d["lang"] = cfg.lang;
   if (forWeb) d["hasPass"] = cfg.pass[0] != 0;
   else d["pass"] = cfg.pass;
   JsonArray ea = d.createNestedArray("events");
@@ -156,21 +167,80 @@ bool saveConfig() {
 }
 
 void loadWifi() {
+  nWifi = 0;
   File f = LittleFS.open("/wifi.json", "r");
   if (!f) return;
-  StaticJsonDocument<256> d;
+  DynamicJsonDocument d(1536);
   if (deserializeJson(d, f) == DeserializationError::Ok) {
-    safeCopy(wifiSsid, sizeof wifiSsid, d["s"] | "");
-    safeCopy(wifiPass, sizeof wifiPass, d["p"] | "");
+    if (d.is<JsonArray>()) {
+      for (JsonObject o : d.as<JsonArray>()) {
+        if (nWifi >= MAX_WIFI) break;
+        const char* s = o["s"] | "";
+        if (!*s) continue;
+        safeCopy(wifis[nWifi].s, sizeof wifis[nWifi].s, s);
+        safeCopy(wifis[nWifi].p, sizeof wifis[nWifi].p, o["p"] | "");
+        nWifi++;
+      }
+    } else {   // 旧版本只存一组：{"s":..,"p":..}
+      const char* s = d["s"] | "";
+      if (*s) {
+        safeCopy(wifis[0].s, sizeof wifis[0].s, s);
+        safeCopy(wifis[0].p, sizeof wifis[0].p, d["p"] | "");
+        nWifi = 1;
+      }
+    }
   }
   f.close();
 }
 
 void saveWifi() {
-  StaticJsonDocument<256> d;
-  d["s"] = wifiSsid; d["p"] = wifiPass;
+  if (!nWifi) { LittleFS.remove("/wifi.json"); return; }
+  DynamicJsonDocument d(1536);
+  JsonArray a = d.to<JsonArray>();
+  for (uint8_t i = 0; i < nWifi; i++) {
+    JsonObject o = a.createNestedObject();
+    o["s"] = wifis[i].s; o["p"] = wifis[i].p;
+  }
   File f = LittleFS.open("/wifi.json", "w");
   if (!f) return;
   serializeJson(d, f);
   f.close();
+}
+
+// 新增或更新一个 Wi-Fi，放到最前面；超过 3 个时淘汰最旧的
+void addWifi(const char* s, const char* p) {
+  int at = -1;
+  for (uint8_t i = 0; i < nWifi; i++) if (!strcmp(wifis[i].s, s)) { at = i; break; }
+  if (at < 0) { if (nWifi < MAX_WIFI) nWifi++; at = nWifi - 1; }
+  for (int i = at; i > 0; i--) wifis[i] = wifis[i - 1];
+  safeCopy(wifis[0].s, sizeof wifis[0].s, s);
+  safeCopy(wifis[0].p, sizeof wifis[0].p, p);
+  saveWifi();
+}
+
+void removeWifi(uint8_t i) {
+  if (i >= nWifi) return;
+  for (uint8_t k = i; k + 1 < nWifi; k++) wifis[k] = wifis[k + 1];
+  nWifi--;
+  saveWifi();
+}
+
+// ---- 连按两次 RST 进入配网 ----
+// 开机时在 RTC 内存里写标记，3 秒内没再次复位就清掉；再次复位时发现标记还在，就是连按
+#define DR_MAGIC 0xD0B1E5E7UL
+bool gDoubleReset = false, drArmed = false;
+void drArm() {
+  uint32_t m = 0;
+  ESP.rtcUserMemoryRead(0, &m, sizeof m);
+  gDoubleReset = (m == DR_MAGIC) && ESP.getResetInfoPtr()->reason == REASON_EXT_SYS_RST;
+  m = DR_MAGIC;
+  ESP.rtcUserMemoryWrite(0, &m, sizeof m);
+  drArmed = true;
+}
+void drTick() {
+  if (drArmed && millis() > 3000) {
+    uint32_t m = 0;
+    ESP.rtcUserMemoryWrite(0, &m, sizeof m);
+    drArmed = false;
+  }
 }

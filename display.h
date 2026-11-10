@@ -76,8 +76,9 @@ void drawHeart(int cx, int cy, int r, uint16_t col) {
 }
 
 // 按像素宽度折行，返回行数
+// 英文在空格处换行，中文逐字换行
 int wrapLines(const char* s, int maxW, char L[][64], int maxL) {
-  int nl = 0, cl = 0;
+  int nl = 0, cl = 0, sp = -1;
   char cur[64], tmp[72];
   const uint8_t* p = (const uint8_t*)s;
   fnt.setFont(F_CN);
@@ -85,10 +86,18 @@ int wrapLines(const char* s, int maxW, char L[][64], int maxL) {
     int clen = (*p < 0x80) ? 1 : (*p < 0xE0) ? 2 : (*p < 0xF0) ? 3 : 4;
     int rem = strlen((const char*)p);
     if (clen > rem) clen = rem;
+    if (cl == 0 && *p == ' ') { p++; continue; }   // 行首空格跳过
     memcpy(tmp, cur, cl); memcpy(tmp + cl, p, clen); tmp[cl + clen] = 0;
     if (cl + clen >= 63 || (cl > 0 && fnt.getUTF8Width(tmp) > maxW)) {
-      cur[cl] = 0; strcpy(L[nl++], cur); cl = 0; continue;
+      if (sp > 0 && *p < 0x80 && *p != ' ') {      // 在最后一个空格处断开，剩下的词留到下一行
+        memcpy(L[nl], cur, sp); L[nl][sp] = 0; nl++;
+        int rest = cl - sp - 1;
+        memmove(cur, cur + sp + 1, rest); cl = rest; sp = -1;
+        continue;
+      }
+      cur[cl] = 0; strcpy(L[nl++], cur); cl = 0; sp = -1; continue;
     }
+    if (*p == ' ') sp = cl;
     memcpy(cur + cl, p, clen); cl += clen; p += clen;
   }
   if (cl > 0 && nl < maxL) { cur[cl] = 0; strcpy(L[nl++], cur); }
@@ -101,6 +110,7 @@ int wrapLines(const char* s, int maxW, char L[][64], int maxL) {
 void bigCNx(const char* s, int cx, int base, uint16_t col, int num, int den) {
   fnt.setFont(F_CN);
   int w = fnt.getUTF8Width(s);
+  if (w * num / den > 236 && num > den * 3 / 2) { num = 3; den = 2; }   // 2 倍放不下先试 1.5 倍
   if (w * num / den > 236) { num = 1; den = 1; }
   const int h = 20, cw = w + 2;
   GFXcanvas1 cv(cw, h);
@@ -140,7 +150,10 @@ uint8_t wxKind(int c) {
   if (c >= 95) return 6;
   return 2;
 }
-const char* WX_TEXT[] = {"晴", "多云", "阴", "雾", "雨", "雪", "雷雨"};
+const char* WX_ZH[] = {"晴", "多云", "阴", "雾", "雨", "雪", "雷雨"};
+const char* WX_EN[] = {"Clear", "Partly", "Cloudy", "Fog", "Rain", "Snow", "Storm"};
+const char* wxText(uint8_t k) { return EN() ? WX_EN[k] : WX_ZH[k]; }
+const char* MON_EN[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
 void drawCloud(int x, int y, uint16_t col) {
   tft.fillCircle(x - 11, y + 5, 8, col);
@@ -181,7 +194,7 @@ void drawWxIcon(uint8_t k, int x, int y) {
 
 // ================= 事件 / 纪念日 =================
 struct EvInfo { const char* name; int days; int m, d; bool cel; bool isStart; };
-const char* START_NAME = "在一起纪念日";
+#define START_NAME TR("在一起纪念日", "Anniversary")
 
 int collectEvents(EvInfo* out, const Today& t) {
   int n = 0;
@@ -265,6 +278,10 @@ uint8_t nextPage(uint8_t p) {
   return P_CLOCK;
 }
 
+// "天"/"days" 单位及其放大 2 倍后的宽度
+const char* dayUnit(long n) { return EN() ? (n == 1 ? "day" : "days") : "天"; }
+int unitW(const char* u) { return EN() ? txtW(u, F_CN) * 2 : 32; }
+
 int clockDrawnMin = -1;
 void drawClockDigits() {
   Today t = getToday();
@@ -278,9 +295,12 @@ void drawClockPage() {
   tft.fillScreen(COL_BG);
   Today t = getToday();
   static const char* WD[] = {"日", "一", "二", "三", "四", "五", "六"};
+  static const char* WDE[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
   char b[40];
-  if (timeValid() || cfg.testDate[0]) snprintf(b, sizeof b, "%d月%d日  周%s", t.m, t.d, WD[t.wd]);
-  else strcpy(b, "等待校时…");
+  if (timeValid() || cfg.testDate[0]) {
+    if (EN()) snprintf(b, sizeof b, "%s, %s %d", WDE[t.wd], MON_EN[t.m - 1], t.d);
+    else snprintf(b, sizeof b, "%d月%d日  周%s", t.m, t.d, WD[t.wd]);
+  } else strcpy(b, TR("等待校时…", "Syncing time..."));
   txtC(b, 34, COL_DIM, F_CN);
   drawClockDigits();
   tft.drawFastHLine(30, 142, 180, C565(50, 50, 60));
@@ -292,10 +312,10 @@ void drawClockPage() {
     putTxt(tb, 112, 196, COL_FG, F_MID);
     tft.drawCircle(112 + w + 6, 172, 3, COL_FG);
     putTxt("C", 112 + w + 12, 196, COL_FG, F_CN);
-    snprintf(b, sizeof b, "%s  %s", WX_TEXT[k], cfg.city);
+    snprintf(b, sizeof b, "%s  %s", wxText(k), cfg.city);
     putTxt(b, 112, 224, COL_DIM, F_CN);
   } else {
-    txtC("天气获取中…", 196, COL_DIM, F_CN);
+    txtC(TR("天气获取中…", "Loading weather..."), 196, COL_DIM, F_CN);
   }
 }
 void tickClock() {   // 每分钟只刷新数字
@@ -309,19 +329,22 @@ void drawTogetherPage() {
   long days = t.days - daysFromCivil(cfg.sy, cfg.sm, cfg.sd) + 1;
   if (days < 1) days = 1;
   drawHeart(120, 22, 9, COL_PINK);
-  bigCN("我们在一起", 120, 80, COL_FG, 2);
+  bigCN(TR("我们在一起", "Together for"), 120, 80, COL_FG, 2);
   char b[24];
   snprintf(b, sizeof b, "%ld", days);
   const uint8_t* nf = txtW(b, F_HUGE) <= 150 ? F_HUGE : F_BIG;
   int w = txtW(b, nf);
-  int x = 120 - (w + 8 + 32) / 2;
+  const char* unit = dayUnit(days);
+  int uw = unitW(unit);
+  int x = 120 - (w + 8 + uw) / 2;
   putTxt(b, x, 176, COL_PINK, nf);
-  bigCN("天", x + w + 8 + 16, 176, COL_FG, 2);
+  bigCN(unit, x + w + 8 + uw / 2, 176, COL_FG, 2);
   int Y = t.y - cfg.sy, M = t.m - cfg.sm, D = t.d - cfg.sd;
   if (D < 0) { M--; int pm = t.m - 1, py = t.y; if (pm < 1) { pm = 12; py--; } D += daysInMonth(py, pm); }
   if (M < 0) { Y--; M += 12; }
   if (Y < 0) { Y = 0; M = 0; D = 0; }
-  snprintf(b, sizeof b, "%d年%d个月%d天", Y, M, D);
+  if (EN()) snprintf(b, sizeof b, "%dy %dm %dd", Y, M, D);
+  else snprintf(b, sizeof b, "%d年%d个月%d天", Y, M, D);
   txtC(b, 224, COL_DIM, F_CN);
 }
 
@@ -331,27 +354,31 @@ void drawCountPage() {
   Today t = getToday();
   EvInfo ev[MAX_EVENTS + 1];
   int n = collectEvents(ev, t);
-  if (n == 0) { txtC("请在网页里添加纪念日", 130, COL_FG, F_CN); return; }
+  if (n == 0) { txtC(TR("请在网页里添加纪念日", "Add events on the web page"), 130, COL_FG, F_CN); return; }
   char b[48];
   drawHeart(120, 14, 4, COL_PINK);
   bigCN(ev[0].name, 120, 62, COL_FG, 2);
   if (ev[0].days == 0) {
-    bigCN("就是今天！", 120, 150, COL_GOLD, 2);
+    bigCN(TR("就是今天！", "It's today!"), 120, 150, COL_GOLD, 2);
   } else {
-    txtC("还有", 88, COL_DIM, F_CN);
+    txtC(TR("还有", "in"), 88, COL_DIM, F_CN);
     snprintf(b, sizeof b, "%d", ev[0].days);
     int w = txtW(b, F_HUGE);
-    int x = 120 - (w + 8 + 32) / 2;
+    const char* unit = dayUnit(ev[0].days);
+    int uw = unitW(unit);
+    int x = 120 - (w + 8 + uw) / 2;
     putTxt(b, x, 176, COL_GOLD, F_HUGE);
-    bigCN("天", x + w + 8 + 16, 176, COL_FG, 2);
+    bigCN(unit, x + w + 8 + uw / 2, 176, COL_FG, 2);
     int pct = ev[0].days >= 365 ? 0 : (365 - ev[0].days) * 100 / 365;
     tft.fillRoundRect(30, 188, 180, 6, 3, C565(50, 50, 60));
     if (pct > 0) tft.fillRoundRect(30, 188, max(6, 180 * pct / 100), 6, 3, COL_GOLD);
   }
-  snprintf(b, sizeof b, "%d月%d日", ev[0].m, ev[0].d);
+  if (EN()) snprintf(b, sizeof b, "%s %d", MON_EN[ev[0].m - 1], ev[0].d);
+  else snprintf(b, sizeof b, "%d月%d日", ev[0].m, ev[0].d);
   txtC(b, 216, COL_DIM, F_CN);
   if (n > 1) {
-    snprintf(b, sizeof b, "之后 %s %d天", ev[1].name, ev[1].days);
+    if (EN()) snprintf(b, sizeof b, "Then %s, %dd", ev[1].name, ev[1].days);
+    else snprintf(b, sizeof b, "之后 %s %d天", ev[1].name, ev[1].days);
     txtC(b, 235, C565(100, 100, 110), F_CN);
   }
 }
@@ -446,14 +473,14 @@ void drawCelebrate() {
   char b[48];
   if (gSpecial.isStart) {
     int years = t.y - cfg.sy;
-    txtC("今天是我们的", 96, COL_FG, F_CN);
+    txtC(TR("今天是我们的", "Today is our"), 96, COL_FG, F_CN);
     snprintf(b, sizeof b, "%d", years);
     txtC(b, 158, COL_PINK, F_BIG);
-    txtC("周年纪念日", 184, COL_FG, F_CN);
+    txtC(TR("周年纪念日", "year anniversary"), 184, COL_FG, F_CN);
   } else {
-    txtC("今天是", 100, COL_FG, F_CN);
+    txtC(TR("今天是", "Today is"), 100, COL_FG, F_CN);
     bigCN(gSpecial.name, 120, 152, COL_PINK, 2);
-    txtC("记得要开心哦", 188, COL_GOLD, F_CN);
+    txtC(TR("记得要开心哦", "Have a happy day!"), 188, COL_GOLD, F_CN);
   }
   for (int i = 0; i < 10; i++) {
     fl[i].top = (i % 2 == 0);
