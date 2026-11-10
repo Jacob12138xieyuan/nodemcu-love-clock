@@ -2,6 +2,10 @@
 
 一个用 NodeMCU (ESP8266) 和 1.3 寸 IPS 屏做的桌面小时钟，适合当纪念日礼物。
 
+![实物照片](docs/demo.jpg)
+
+> 实物为 3D 打印外壳（模型见下文）。照片中的屏幕内容为后期合成，用来展示时钟页；外壳和拍摄均为实物。
+
 > **English summary:** A desk clock for anniversary gifts, built with a NodeMCU (ESP8266) and a 1.3" 240×240 ST7789 IPS display. It rotates between a clock with weather, days together, event countdowns, random photos and love quotes, and shows a full-screen celebration on special days. Everything (Wi-Fi provisioning, events, photos, quotes) is configured from a phone web page, with a Chinese / English UI. Arduino IDE project, GPL-3.0.
 
 屏幕自动轮播：时钟与天气、在一起的天数、倒数日、照片、情话。纪念日当天整天显示庆祝画面。**所有设置都在手机网页里完成，包括 Wi-Fi 配网和照片上传，不需要改代码、不需要重新烧录。**
@@ -57,12 +61,6 @@
 ![外壳模型](docs/case.png)
 
 > 图为由 STL 文件渲染的预览，不是实物照片。
-
-实物（外壳为 3D 打印件）：
-
-![实物照片](docs/demo.jpg)
-
-> 照片中的屏幕内容为后期合成，用来展示时钟页；外壳和拍摄均为实物。
 
 | 文件 | 说明 | 外形尺寸（宽×厚×高） |
 |---|---|---|
