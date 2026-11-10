@@ -50,7 +50,18 @@
 
 ## 3D 打印外壳
 
-配套的外壳模型可以在 Thingiverse 下载：**[thing:6388626](https://www.thingiverse.com/thing:6388626)**（STL 文件、打印建议和装配说明见该页面）。
+外壳由两个零件组成，STL 文件在 [`stl/`](stl/) 目录里，也可以在 Thingiverse 下载：**[thing:6388626](https://www.thingiverse.com/thing:6388626)**。
+
+![外壳模型](docs/case.png)
+
+> 图为由 STL 文件渲染的预览，不是实物照片。
+
+| 文件 | 说明 | 外形尺寸（宽×厚×高） |
+|---|---|---|
+| [`stl/Body1.stl`](stl/Body1.stl) | 主体：斜面正面开屏幕窗口，背面开口，四个角有螺丝孔，用来装入屏幕和 NodeMCU | 35 × 37 × 52.2 mm |
+| [`stl/Body2.stl`](stl/Body2.stl) | 后盖：四角螺丝孔，下方留 USB 口，外侧有浮雕文字 | 35 × 1.8 × 48 mm |
+
+装配：把屏幕和 NodeMCU 从背面装进主体，USB 线对准后盖上的开口，再用四颗螺丝把后盖固定在主体背面。
 
 ## 接线
 
@@ -203,7 +214,8 @@ Mac 上若看不到串口，需要安装 CH340 驱动（WCH 官网搜 "CH34x Mac
 | `weather.h` | 天气请求与解析 |
 | `web_ui.h` | 热点配网、强制门户、设置页后端接口 |
 | `web_page.h` | 内嵌的设置网页（HTML/CSS/JS），含中英文切换 |
-| `docs/` | README 用的图：`screens.png`、`screens_en.png`（屏幕）、`wiring.png`（接线）、`web.png`、`web_en.png`（设置页） |
+| `docs/` | README 用的图：`screens.png`、`screens_en.png`（屏幕）、`wiring.png`（接线）、`web.png`、`web_en.png`（设置页）、`case.png`（外壳）、`social.png`（仓库封面） |
+| `stl/` | 3D 打印外壳模型（主体和后盖） |
 
 ## 常见问题
 
