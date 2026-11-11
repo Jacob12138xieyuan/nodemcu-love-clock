@@ -1,10 +1,10 @@
 # 爱的小时钟 (Love Clock)
 
-一个用 NodeMCU (ESP8266) 和 1.3 寸 IPS 屏做的桌面小时钟，适合当纪念日礼物。
+一个用 D1 mini (ESP8266) 和 1.3 寸 IPS 屏做的桌面小时钟，适合当纪念日礼物。
 
 <p align="center"><img src="docs/demo.jpg" alt="实物照片" width="420"></p>
 
-> **English summary:** A desk clock for anniversary gifts, built with a NodeMCU (ESP8266) and a 1.3" 240×240 ST7789 IPS display. It rotates between a clock with weather, days together, event countdowns, random photos and love quotes, and shows a full-screen celebration on special days. Everything (Wi-Fi provisioning, events, photos, quotes) is configured from a phone web page, with a Chinese / English UI. Arduino IDE project, GPL-3.0.
+> **English summary:** A desk clock for anniversary gifts, built with a D1 mini (ESP8266) and a 1.3" 240×240 ST7789 IPS display. It rotates between a clock with weather, days together, event countdowns, random photos and love quotes, and shows a full-screen celebration on special days. Everything (Wi-Fi provisioning, events, photos, quotes) is configured from a phone web page, with a Chinese / English UI. Arduino IDE project, GPL-3.0.
 
 屏幕自动轮播：时钟与天气、在一起的天数、倒数日、照片、情话。纪念日当天整天显示庆祝画面。**所有设置都在手机网页里完成，包括 Wi-Fi 配网和照片上传，不需要改代码、不需要重新烧录。**
 
@@ -42,7 +42,7 @@
 
 | 物品 | 说明 |
 |---|---|
-| ESP8266 开发板 | NodeMCU（ESP-12E），或体积更小的 **D1 mini**（ESP-12F），带 USB（CH340 或 CP2102）。3D 外壳按 D1 mini 尺寸设计 |
+| D1 mini 开发板 | ESP8266（ESP-12F），Micro USB，CH340 串口芯片。3D 外壳按它的尺寸设计 |
 | 1.3 寸 IPS 屏 | ST7789 驱动，240×240，SPI 接口，3.3V 版本 |
 | 杜邦线 | 母对母 7 根（按钮可选，再加 1 根） |
 | Micro USB 线 | 供电和烧录，请用能传数据的线 |
@@ -54,7 +54,7 @@
 
 > 左：D1 mini（ESP-12F）开发板；右：1.3 寸 240×240 ST7789 IPS 屏，正反面。
 
-两种板子的引脚丝印都是 D0～D8、G、3V，本项目的接线和代码通用；编译时开发板选 NodeMCU 1.0 即可。
+用 NodeMCU（ESP-12E）也可以：引脚丝印同样是 D0～D8、G，接线和代码通用，只是 3D 外壳装不下。
 
 1.3 寸屏模块常见 7 针或 8 针版本。7 针版本没有 CS 引脚（模块上已通过 J2 短接线接地）。本项目按"CS 接地、软件不控制 CS"设计，8 针版本的 CS 也请接 GND。
 
@@ -68,10 +68,10 @@
 
 | 文件 | 说明 | 外形尺寸（宽×厚×高） |
 |---|---|---|
-| [`stl/Body1.stl`](stl/Body1.stl) | 主体：斜面正面开屏幕窗口，背面开口，四个角有螺丝孔，用来装入屏幕和 NodeMCU | 35 × 37 × 52.2 mm |
+| [`stl/Body1.stl`](stl/Body1.stl) | 主体：斜面正面开屏幕窗口，背面开口，四个角有螺丝孔，用来装入屏幕和 D1 mini | 35 × 37 × 52.2 mm |
 | [`stl/Body2.stl`](stl/Body2.stl) | 后盖：四角螺丝孔，下方留 USB 口，外侧有浮雕文字 | 35 × 1.8 × 48 mm |
 
-装配：把屏幕和 NodeMCU 从背面装进主体，USB 线对准后盖上的开口，再用 4 颗 M2 螺丝把后盖固定在主体背面。
+装配：把屏幕和 D1 mini 从背面装进主体，USB 线对准后盖上的开口，再用 4 颗 M2 螺丝把后盖固定在主体背面。
 
 - **螺丝**：M2，长 4～6 mm，4 颗，直接自攻拧进 3D 打印件，不需要螺母。
 - **打印**：不需要支撑。
@@ -83,10 +83,10 @@
 文字版：
 
 ```
-  1.3 寸屏模块              NodeMCU
+  1.3 寸屏模块              D1 mini
  ┌───────────┐          ┌─────────────┐
  │ GND       ├──────────┤ G  (GND)    │
- │ VCC       ├──────────┤ 3V (3.3V)   │
+ │ VCC       ├──────────┤ 3V3 (3.3V)  │
  │ SCL (SCK) ├──────────┤ D5 (GPIO14) │
  │ SDA (MOSI)├──────────┤ D7 (GPIO13) │
  │ RES       ├──────────┤ D4 (GPIO2)  │
@@ -96,10 +96,10 @@
  └───────────┘          └─────────────┘
 ```
 
-| 屏幕 | NodeMCU | GPIO | 说明 |
+| 屏幕 | D1 mini | GPIO | 说明 |
 |---|---|---|---|
 | GND | G | - | 地 |
-| VCC | 3V | - | **接 3.3V，不要接 VIN/5V** |
+| VCC | 3V3 | - | **接 3.3V，不要接 VIN/5V** |
 | SCL (SCK) | D5 | 14 | 硬件 SPI 时钟 |
 | SDA (MOSI) | D7 | 13 | 硬件 SPI 数据 |
 | RES | D4 | 2 | 复位 |
@@ -170,7 +170,7 @@ section `.rodata' will not fit in region `dram0_0_seg'
 1. 按上面装好开发板包和库，打补丁。
 2. 打开 `love_clock/love_clock.ino`。
 3. 工具菜单设置：
-   - 开发板：**NodeMCU 1.0 (ESP-12E Module)**
+   - 开发板：**NodeMCU 1.0 (ESP-12E Module)**（D1 mini 实测可用；选 LOLIN(WEMOS) D1 R2 & mini 也行）
    - Flash Size：**4MB (FS:2MB OTA:~1019KB)**
    - Upload Speed：921600（不稳定就降到 115200）
    - 端口：选你的 USB 串口
@@ -235,7 +235,7 @@ Mac 上若看不到串口，需要安装 CH340 驱动（WCH 官网搜 "CH34x Mac
 | 现象 | 处理 |
 |---|---|
 | 编译报 `.rodata will not fit in region dram0_0_seg` | 没打 U8g2 补丁，见上 |
-| 编译报 `'D3' was not declared` | 开发板没选 NodeMCU 1.0；本项目已改用 GPIO 编号，更新到最新代码 |
+| 编译报 `'D3' was not declared` | 开发板没选 NodeMCU 1.0 或 LOLIN(WEMOS) D1 R2 & mini；本项目已改用 GPIO 编号，更新到最新代码 |
 | 编译报 `ArduinoJson.h` 或 `TJpg_Decoder.h` 找不到 | 对应的库没装 |
 | ArduinoJson 相关的奇怪编译错误 | 装成了 7.x，换成 6.21.5 |
 | 屏幕全白、花屏 | 检查接线；确认 `tft.init(240, 240, SPI_MODE2)` |
