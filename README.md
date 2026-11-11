@@ -115,33 +115,54 @@
 - D3 (GPIO0) 和 D4 (GPIO2) 是启动配置引脚，接屏幕没问题，但烧录时若失败，先拔掉这两根线再试。
 - 不要把按钮接 D6 (GPIO12)，它是 SPI 的 MISO，会被占用。
 
-## 软件环境
+## 软件环境与编译
 
-| 项目 | 版本 |
-|---|---|
-| Arduino IDE | 2.x |
-| ESP8266 开发板包 | 3.1.2（其他 3.x 应该也行） |
-| Adafruit GFX Library | 最新版 |
-| Adafruit ST7735 and ST7789 Library | 最新版 |
-| U8g2_for_Adafruit_GFX | 最新版，**需要打一个补丁，见下** |
-| TJpg_Decoder | 最新版 |
-| ArduinoJson | **6.x（如 6.21.5），不能用 7.x** |
+以下步骤从零开始，Mac、Windows 都一样。已经装过的步骤可以跳过。
 
-开发板包地址（Arduino IDE 设置 → 其他开发板管理器地址）：
+### 1. 安装 Arduino IDE 和驱动
 
-```
-http://arduino.esp8266.com/stable/package_esp8266com_index.json
-```
+- 到 [arduino.cc/en/software](https://www.arduino.cc/en/software) 下载 **Arduino IDE 2.x** 并安装。
+- 用能传数据的 Micro USB 线把 D1 mini 接到电脑。如果工具 → 端口里看不到新串口，需要装串口驱动：D1 mini 常见 CH340 芯片，到 WCH 官网搜 "CH34x driver"（Mac 搜 "CH34x Mac driver"）；CP2102 板子装 Silicon Labs 的驱动。
 
-### 必须：给 U8g2_for_Adafruit_GFX 打补丁
+### 2. 安装 ESP8266 开发板包
 
-这个库没有为 ESP8266 把字体放进闪存，318KB 的中文字体会被放进只有 80KB 的 RAM，链接时报：
+1. 打开 **设置**（Mac：Arduino IDE → Settings，Windows：File → Preferences），在"其他开发板管理器地址"里填：
+
+   ```
+   http://arduino.esp8266.com/stable/package_esp8266com_index.json
+   ```
+
+2. 左侧点开发板管理器图标（或菜单 工具 → 开发板 → 开发板管理器），搜索 `esp8266`，安装 **esp8266 by ESP8266 Community**，版本选 **3.1.2**（其他 3.x 应该也行）。国内网络下载慢或失败，可以换网络或稍后再试。
+
+### 3. 安装库
+
+左侧点库管理器图标（或菜单 工具 → 管理库），逐个搜索并点 Install。遇到"是否同时安装依赖库"选 **Install all**。
+
+| 搜索名 | 作者 | 版本 |
+|---|---|---|
+| `Adafruit GFX Library` | Adafruit | 最新版 |
+| `Adafruit ST7735 and ST7789 Library` | Adafruit | 最新版 |
+| `U8g2_for_Adafruit_GFX` | oliver | 最新版，**需要打补丁，见下一步** |
+| `TJpg_Decoder` | Bodmer | 最新版 |
+| `ArduinoJson` | Benoit Blanchon | **6.x（如 6.21.5），不能用 7.x**：版本下拉框里手动选 6.21.5 |
+
+`LittleFS`、`ESP8266WiFi`、`ESP8266WebServer`、`DNSServer`、`ESP8266mDNS` 随开发板包自带，不用另装。
+
+### 4. 必须：给 U8g2_for_Adafruit_GFX 打补丁
+
+这个库没有为 ESP8266 把字体放进闪存，318KB 的中文字体会被放进只有 80KB 的 RAM，不打补丁编译会在链接时报：
 
 ```
 section `.rodata' will not fit in region `dram0_0_seg'
 ```
 
-修改库里的 `src/u8g2_fonts.h`（路径一般是 `~/Documents/Arduino/libraries/U8g2_for_Adafruit_GFX/src/u8g2_fonts.h`），找到：
+修改库里的 `src/u8g2_fonts.h`：
+
+- Mac：`~/Documents/Arduino/libraries/U8g2_for_Adafruit_GFX/src/u8g2_fonts.h`
+- Windows：`文档\Arduino\libraries\U8g2_for_Adafruit_GFX\src\u8g2_fonts.h`
+- 路径不对时，到 Arduino IDE 设置里看"项目文件夹位置"，库在它下面的 `libraries` 目录。
+
+用文本编辑器打开，找到：
 
 ```c
 #if defined(__GNUC__) && defined(__AVR__)
@@ -163,22 +184,22 @@ section `.rodata' will not fit in region `dram0_0_seg'
 #endif
 ```
 
-库更新后补丁会被覆盖，需要重新打。
+保存后**重启 Arduino IDE**。库更新后补丁会被覆盖，需要重新打。
 
-## 编译和烧录
+### 5. 下载项目并编译烧录
 
-1. 按上面装好开发板包和库，打补丁。
-2. 打开 `love_clock/love_clock.ino`。
+1. 下载代码：在本页点绿色的 **Code → Download ZIP** 并解压，或者 `git clone https://github.com/Jacob12138xieyuan/nodemcu-love-clock.git`。
+2. 打开项目文件夹里的 `love_clock.ino`。Arduino 要求文件夹名和 `.ino` 同名：下载或 clone 下来的文件夹叫 `nodemcu-love-clock`，请先改名为 `love_clock`，否则会提示"文件夹名不匹配"并要求另存。
 3. 工具菜单设置：
    - 开发板：**NodeMCU 1.0 (ESP-12E Module)**（D1 mini 实测可用；选 LOLIN(WEMOS) D1 R2 & mini 也行）
    - Flash Size：**4MB (FS:2MB OTA:~1019KB)**
    - Upload Speed：921600（不稳定就降到 115200）
-   - 端口：选你的 USB 串口
-4. 点 Verify 确认编译通过，再点 Upload。
+   - 端口：选你的 USB 串口（Mac 上形如 `/dev/cu.usbserial-xxx`，Windows 上是 `COMx`）
+4. 先点左上角 ✓（Verify）确认编译通过，再点 →（Upload）烧录。第一次编译较慢，因为字体库的源文件有 30MB，请耐心等几分钟。
+5. 烧录成功后屏幕会显示"请连接热点 LoveClock-Setup"，接着看下面的"第一次使用"。
 
-设置网页内嵌在固件里，**不需要**另外上传文件系统。第一次编译较慢，因为字体库的源文件有 30MB。
+设置网页内嵌在固件里，**不需要**另外上传文件系统。
 
-Mac 上若看不到串口，需要安装 CH340 驱动（WCH 官网搜 "CH34x Mac driver"）。CP2102 板子需要 Silicon Labs 的驱动。
 
 ## 第一次使用
 
