@@ -62,7 +62,7 @@ Today getToday() {
 
 // ================= 基础绘制 =================
 void putTxt(const char* s, int x, int y, uint16_t col, const uint8_t* font) {
-  fnt.setFont(font); fnt.setForegroundColor(col); fnt.drawUTF8(x, y, s);
+  fnt.setFont(font); fnt.setFontMode(0); fnt.setForegroundColor(col); fnt.drawUTF8(x, y, s);
 }
 int txtW(const char* s, const uint8_t* font) { fnt.setFont(font); return fnt.getUTF8Width(s); }
 void txtC(const char* s, int y, uint16_t col, const uint8_t* font, int cx = 120) {
@@ -282,45 +282,261 @@ uint8_t nextPage(uint8_t p) {
 const char* dayUnit(long n) { return EN() ? (n == 1 ? "day" : "days") : "天"; }
 int unitW(const char* u) { return EN() ? txtW(u, F_CN) * 2 : 32; }
 
-int clockDrawnMin = -1;
-void drawClockDigits() {
-  Today t = getToday();
-  tft.fillRect(0, 52, 240, 76, COL_BG);
-  char b[8];
-  if (timeValid()) snprintf(b, sizeof b, "%02d:%02d", t.hh, t.mm); else strcpy(b, "--:--");
-  txtC(b, 118, COL_FG, F_BIG);
-  clockDrawnMin = t.mm;
+// ================= 时钟页：8 种样式（cfg.clockStyle：0=A 默认）=================
+// 0 A 超大数字  1 B 上下分行  2 C 圆润卡片  3 D 表盘  4 E 进度信息  5 F 复古数码  6 G 爱心  7 H 极简
+#define CLOCK_STYLES 8
+#define F_L62  u8g2_font_logisoso62_tn
+#define F_FUB49 u8g2_font_fub49_tn
+#define F_FUB35 u8g2_font_fub35_tf
+#define F_FUB30 u8g2_font_fub30_tf
+#define F_FUB25 u8g2_font_fub25_tf
+#define F_FUB20 u8g2_font_fub20_tf
+#define F_FUB14 u8g2_font_fub14_tf
+#define F_SEG  u8g2_font_7Segments_26x42_mn
+
+const uint16_t COL_LINE = C565(60, 60, 72), COL_CARD = C565(28, 30, 40);
+const uint16_t COL_AMB = C565(255, 170, 0), COL_AMB_D = C565(52, 34, 0), COL_AMB_L = C565(150, 100, 20);
+
+// 透明背景写字（putTxt 是实心背景，卡片和爱心上要用这个）
+void tt(const char* s, int x, int y, uint16_t col, const uint8_t* font) {
+  fnt.setFont(font); fnt.setFontMode(1); fnt.setForegroundColor(col); fnt.drawUTF8(x, y, s);
 }
-void drawClockPage() {
-  tft.fillScreen(COL_BG);
+void ttC(const char* s, int y, uint16_t col, const uint8_t* font, int cx = 120) { tt(s, cx - txtW(s, font) / 2, y, col, font); }
+void thickLine(int x0, int y0, int x1, int y1, int w, uint16_t col) {
+  int n = max(abs(x1 - x0), abs(y1 - y0)); if (n < 1) n = 1;
+  for (int i = 0; i <= n; i++) tft.fillCircle(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n, w / 2, col);
+}
+
+// 小号天气图标，用在底部天气行
+void drawWxMini(uint8_t k, int x, int y) {
+  auto cloud = [&](int cx, int cy, uint16_t c) {
+    tft.fillCircle(cx - 7, cy + 3, 5, c); tft.fillCircle(cx, cy - 2, 7, c); tft.fillCircle(cx + 7, cy + 3, 5, c);
+    tft.fillRect(cx - 7, cy + 3, 15, 6, c);
+  };
+  switch (k) {
+    case 0:
+      tft.fillCircle(x, y, 6, COL_GOLD);
+      for (int i = 0; i < 8; i++) { float a = i * 0.785398f; tft.drawLine(x + cosf(a) * 9, y + sinf(a) * 9, x + cosf(a) * 13, y + sinf(a) * 13, COL_GOLD); }
+      break;
+    case 1: tft.fillCircle(x + 6, y - 6, 5, COL_GOLD); cloud(x - 1, y + 2, COL_GRAY); break;
+    case 2: cloud(x, y, COL_GRAY); break;
+    case 3: for (int i = 0; i < 3; i++) tft.fillRoundRect(x - 12 + i * 3, y - 8 + i * 7, 22, 3, 1, COL_GRAY); break;
+    case 4: cloud(x, y - 5, COL_GRAY); for (int i = 0; i < 3; i++) tft.drawLine(x - 6 + i * 6, y + 7, x - 9 + i * 6, y + 13, COL_BLUE); break;
+    case 5: cloud(x, y - 5, COL_GRAY); for (int i = 0; i < 3; i++) tft.fillCircle(x - 6 + i * 6, y + 8 + (i & 1) * 4, 1, COL_FG); break;
+    default: cloud(x, y - 5, C565(110, 115, 130)); tft.fillTriangle(x, y + 3, x - 4, y + 10, x + 1, y + 10, COL_GOLD);
+  }
+}
+
+// 温度：数字 + 小圆圈 + C，返回结束的 x
+int drawTemp(int x, int base, uint16_t col, uint16_t colC, const uint8_t* font) {
+  char tb[8]; snprintf(tb, sizeof tb, "%d", wx.temp);
+  int w = txtW(tb, font); fnt.setFont(font); int asc = fnt.getFontAscent();
+  tt(tb, x, base, col, font);
+  tft.drawCircle(x + w + 5, base - (asc * 3) / 4 - 1, 3, col);
+  tt("C", x + w + 11, base, colC, F_CN);
+  return x + w + 20;
+}
+int tempW(const uint8_t* font) { char tb[8]; snprintf(tb, sizeof tb, "%d", wx.temp); return txtW(tb, font) + 20; }
+
+void wxCondLine(char* b, size_t n) {
+  if (cfg.city[0]) snprintf(b, n, "%s \xC2\xB7 %s", wxText(wxKind(wx.code)), cfg.city);
+  else snprintf(b, n, "%s", wxText(wxKind(wx.code)));
+}
+
+int clockDrawnMin = -1;
+
+void clockTimeStr(char* b, uint16_t& col, uint16_t normal) {
+  Today t = getToday();
+  if (timeValid()) { snprintf(b, 8, "%02d:%02d", t.hh, t.mm); col = normal; }
+  else { strcpy(b, "00:00"); col = COL_DIM; }
+}
+void dateFull(char* b, size_t n) {
   Today t = getToday();
   static const char* WD[] = {"日", "一", "二", "三", "四", "五", "六"};
   static const char* WDE[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-  char b[40];
   if (timeValid() || cfg.testDate[0]) {
-    if (EN()) snprintf(b, sizeof b, "%s, %s %d", WDE[t.wd], MON_EN[t.m - 1], t.d);
-    else snprintf(b, sizeof b, "%d月%d日  周%s", t.m, t.d, WD[t.wd]);
-  } else strcpy(b, TR("等待校时…", "Syncing time..."));
-  txtC(b, 34, COL_DIM, F_CN);
-  drawClockDigits();
-  tft.drawFastHLine(30, 142, 180, C565(50, 50, 60));
-  if (wx.ok) {
-    uint8_t k = wxKind(wx.code);
-    drawWxIcon(k, 62, 186);
-    char tb[8]; snprintf(tb, sizeof tb, "%d", wx.temp);
-    int w = txtW(tb, F_MID);
-    putTxt(tb, 112, 196, COL_FG, F_MID);
-    tft.drawCircle(112 + w + 6, 172, 3, COL_FG);
-    putTxt("C", 112 + w + 12, 196, COL_FG, F_CN);
-    snprintf(b, sizeof b, "%s  %s", wxText(k), cfg.city);
-    putTxt(b, 112, 224, COL_DIM, F_CN);
-  } else {
-    txtC(TR("天气获取中…", "Loading weather..."), 196, COL_DIM, F_CN);
+    if (EN()) snprintf(b, n, "%s, %s %d", WDE[t.wd], MON_EN[t.m - 1], t.d);
+    else snprintf(b, n, "%d月%d日  周%s", t.m, t.d, WD[t.wd]);
+  } else snprintf(b, n, "%s", TR("等待校时…", "Syncing time..."));
+}
+void dateMD(char* b, size_t n) {
+  Today t = getToday();
+  if (EN()) snprintf(b, n, "%s %d", MON_EN[t.m - 1], t.d); else snprintf(b, n, "%d月%d日", t.m, t.d);
+}
+void weekS(char* b, size_t n) {
+  Today t = getToday();
+  static const char* WD[] = {"日", "一", "二", "三", "四", "五", "六"};
+  static const char* WDE[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+  if (EN()) snprintf(b, n, "%s", WDE[t.wd]); else snprintf(b, n, "周%s", WD[t.wd]);
+}
+void wxLoading(int y) { ttC(TR("天气获取中…", "Loading weather..."), y, COL_DIM, F_CN); }
+
+// ---- 每分钟刷新的部分 ----
+void clockDynamic(uint8_t st) {
+  Today t = getToday();
+  char b[40]; uint16_t col;
+  switch (st) {
+    case 1:   // B 上下分行
+      tft.fillRect(0, 4, 144, 186, COL_BG);
+      snprintf(b, sizeof b, "%02d", timeValid() ? t.hh : 0); tt(b, 18, 92, timeValid() ? COL_FG : COL_DIM, F_HUGE);
+      snprintf(b, sizeof b, "%02d", timeValid() ? t.mm : 0); tt(b, 18, 184, timeValid() ? COL_PINK : COL_DIM, F_HUGE);
+      break;
+    case 2:   // C 圆润卡片
+      tft.fillRect(0, 58, 240, 60, COL_BG);
+      clockTimeStr(b, col, COL_FG); ttC(b, 112, col, F_FUB49);
+      break;
+    case 3: { // D 表盘
+      const int cx = 120, cy = 104, R = 90;
+      tft.fillCircle(cx, cy, R - 14, COL_BG);
+      drawHeart(cx, cy - R + 26, 5, COL_PINK);
+      dateMD(b, sizeof b); char w[16]; weekS(w, sizeof w); strcat(b, " "); strcat(b, w);
+      ttC(b, cy + 48, COL_DIM, F_CN);
+      float ah = ((t.hh % 12) + t.mm / 60.0f) * PI / 6, am = t.mm * PI / 30;
+      thickLine(cx, cy, cx + sinf(ah) * 46, cy - cosf(ah) * 46, 5, COL_FG);
+      thickLine(cx, cy, cx + sinf(am) * 70, cy - cosf(am) * 70, 3, COL_PINK);
+      tft.fillCircle(cx, cy, 5, COL_GOLD);
+      break; }
+    case 4: { // E 进度信息
+      tft.fillRect(0, 44, 240, 68, COL_BG);
+      clockTimeStr(b, col, COL_FG); ttC(b, 108, col, F_L62);
+      tft.fillRect(0, 118, 240, 40, COL_BG);
+      int pct = (t.hh * 60 + t.mm) * 100 / 1440;
+      tft.fillRoundRect(20, 124, 200, 8, 4, C565(45, 47, 58));
+      tft.fillRoundRect(20, 124, max(8, 200 * pct / 100), 8, 4, COL_PINK);
+      snprintf(b, sizeof b, EN() ? "Today %d%%" : "今天已过 %d%%", pct);
+      ttC(b, 152, COL_DIM, F_CN);
+      break; }
+    case 5: { // F 复古数码：先画满笔画的暗色 88:88，再叠上亮色的时间
+      int w = txtW("88:88", F_SEG);
+      tt("88:88", 120 - w / 2, 118, COL_AMB_D, F_SEG);
+      clockTimeStr(b, col, COL_AMB); tt(b, 120 - w / 2, 118, col == COL_DIM ? COL_AMB_L : col, F_SEG);
+      break; }
+    case 6:   // G 爱心
+      tft.fillRect(62, 76, 116, 30, COL_PINK);
+      clockTimeStr(b, col, COL_FG); ttC(b, 102, col, F_FUB35);
+      break;
+    case 7:   // H 极简
+      tft.fillRect(0, 50, 240, 90, COL_BG);
+      clockTimeStr(b, col, C565(225, 225, 232)); ttC(b, 134, col, F_HUGE);
+      break;
+    default:  // A 超大数字
+      tft.fillRect(0, 64, 240, 92, COL_BG);
+      clockTimeStr(b, col, COL_FG); ttC(b, 150, col, F_HUGE);
+  }
+  clockDrawnMin = t.mm;
+}
+
+// ---- 整页（不随分钟变化的部分）----
+void drawClockStatic(uint8_t st) {
+  char b[48], w[16]; uint8_t k = wxKind(wx.code);
+  switch (st) {
+    case 1:   // B
+      tft.drawFastVLine(146, 26, 158, COL_LINE);
+      drawHeart(190, 40, 8, COL_PINK);
+      { Today t = getToday(); snprintf(b, sizeof b, "%02d.%02d", t.m, t.d); ttC(b, 110, COL_FG, F_FUB20, 190); }
+      weekS(w, sizeof w); ttC(w, 140, COL_PINK, F_CN, 190);
+      tft.drawFastHLine(20, 200, 200, COL_LINE);
+      if (wx.ok) {
+        drawWxMini(k, 40, 219);
+        int x = drawTemp(68, 227, COL_FG, COL_DIM, F_FUB20);
+        wxCondLine(b, sizeof b); tt(b, x + 6, 226, COL_DIM, F_CN);
+      } else wxLoading(222);
+      break;
+    case 2: { // C
+      dateFull(b, sizeof b);
+      int pw = txtW(b, F_CN) + 28;
+      tft.fillRoundRect(120 - pw / 2, 12, pw, 28, 14, COL_PINK);
+      ttC(b, 32, COL_FG, F_CN);
+      tft.fillRoundRect(14, 134, 100, 88, 14, COL_CARD);
+      tft.fillRoundRect(126, 134, 100, 88, 14, COL_CARD);
+      if (wx.ok) {
+        drawWxIcon(k, 64, 160);
+        int x = 64 - tempW(F_FUB30) / 2;
+        drawTemp(x, 208, COL_FG, COL_DIM, F_FUB30);
+        drawHeart(176, 156, 6, COL_PINK);
+        ttC(wxText(k), 194, COL_FG, F_CN, 176);
+        ttC(cfg.city, 214, COL_DIM, F_CN, 176);
+      } else { ttC(TR("天气", "Weather"), 182, COL_DIM, F_CN, 64); ttC("--", 204, COL_DIM, F_CN, 64); drawHeart(176, 170, 8, COL_PINK); }
+      break; }
+    case 3: { // D
+      const int cx = 120, cy = 104, R = 90;
+      tft.drawCircle(cx, cy, R, C565(70, 70, 84)); tft.drawCircle(cx, cy, R - 1, C565(70, 70, 84));
+      for (int i = 0; i < 60; i++) {
+        float a = i * PI / 30; int r0; uint16_t c;
+        if (i % 5 == 0) { r0 = R - 12; c = (i % 15 == 0) ? COL_FG : COL_GRAY; } else { r0 = R - 6; c = C565(80, 80, 94); }
+        int x0 = cx + sinf(a) * r0, y0 = cy - cosf(a) * r0, x1 = cx + sinf(a) * (R - 3), y1 = cy - cosf(a) * (R - 3);
+        tft.drawLine(x0, y0, x1, y1, c);
+        if (i % 5 == 0) { tft.drawLine(x0 + 1, y0, x1 + 1, y1, c); }
+      }
+      tft.drawFastHLine(40, 214, 160, COL_LINE);
+      if (wx.ok) {
+        drawWxMini(k, 40, 226);
+        int x = drawTemp(62, 235, COL_FG, COL_DIM, F_FUB14);
+        wxCondLine(b, sizeof b); tt(b, x + 8, 234, COL_DIM, F_CN);
+      } else wxLoading(232);
+      break; }
+    case 4: { // E
+      dateMD(b, sizeof b); tt(b, 16, 32, COL_FG, F_CN);
+      weekS(w, sizeof w); tt(w, 224 - txtW(w, F_CN), 32, COL_PINK, F_CN);
+      static const char* NZ[] = {"一", "二", "三", "四", "五", "六", "日"};
+      static const char* NE[] = {"M", "T", "W", "T", "F", "S", "S"};
+      int today = (getToday().wd + 6) % 7;
+      for (int i = 0; i < 7; i++) {
+        int x = 30 + i * 30;
+        if (i == today) tft.fillCircle(x, 176, 12, COL_PINK); else tft.drawCircle(x, 176, 12, C565(70, 70, 84));
+        ttC(EN() ? NE[i] : NZ[i], 182, i == today ? COL_FG : COL_DIM, F_CN, x);
+      }
+      if (wx.ok) {
+        drawWxMini(k, 40, 216);
+        int x = drawTemp(66, 224, COL_FG, COL_DIM, F_FUB20);
+        wxCondLine(b, sizeof b); tt(b, x + 8, 222, COL_DIM, F_CN);
+      } else wxLoading(220);
+      break; }
+    case 5: { // F
+      tft.drawRoundRect(14, 52, 212, 104, 10, COL_AMB_L); tft.drawRoundRect(15, 53, 210, 102, 9, COL_AMB_L);
+      dateFull(b, sizeof b); ttC(b, 36, COL_AMB, F_CN);
+      tft.drawFastHLine(14, 180, 212, COL_AMB_L);
+      if (wx.ok) {
+        drawTemp(22, 216, COL_AMB, COL_AMB_L, F_FUB25);
+        wxCondLine(b, sizeof b); tt(b, 218 - txtW(b, F_CN), 214, COL_AMB, F_CN);
+      } else ttC(TR("天气获取中…", "Loading weather..."), 210, COL_AMB_L, F_CN);
+      break; }
+    case 6: { // G
+      drawHeart(120, 62, 46, COL_PINK);
+      drawHeart(16, 26, 5, COL_GOLD); drawHeart(224, 22, 4, COL_PINK); drawHeart(216, 168, 5, COL_GOLD); drawHeart(24, 168, 4, COL_PINK);
+      dateFull(b, sizeof b); ttC(b, 208, COL_FG, F_CN);
+      if (wx.ok) {
+        if (cfg.city[0]) snprintf(b, sizeof b, "%s %d\xC2\xB0""C \xC2\xB7 %s", wxText(k), wx.temp, cfg.city);
+        else snprintf(b, sizeof b, "%s %d\xC2\xB0""C", wxText(k), wx.temp);
+        ttC(b, 232, COL_DIM, F_CN);
+      } else wxLoading(232);
+      break; }
+    case 7:   // H
+      drawHeart(120, 176, 4, COL_PINK);
+      dateFull(b, sizeof b); ttC(b, 214, COL_DIM, F_CN);
+      break;
+    default: { // A
+      drawHeart(120, 18, 4, COL_PINK);
+      dateFull(b, sizeof b); ttC(b, 52, COL_DIM, F_CN);
+      tft.drawFastHLine(24, 164, 192, COL_LINE);
+      if (wx.ok) {
+        drawWxIcon(k, 48, 198);
+        drawTemp(84, 214, COL_FG, COL_FG, F_MID);
+        wxCondLine(b, sizeof b); tt(b, 216 - txtW(b, F_CN), 214, COL_DIM, F_CN);
+      } else wxLoading(204);
+    }
   }
 }
-void tickClock() {   // 每分钟只刷新数字
+
+void drawClockPage() {
+  tft.fillScreen(COL_BG);
+  uint8_t st = cfg.clockStyle < CLOCK_STYLES ? cfg.clockStyle : 0;
+  drawClockStatic(st);
+  clockDynamic(st);
+}
+void tickClock() {   // 每分钟只刷新时间部分
   Today t = getToday();
-  if (t.mm != clockDrawnMin) drawClockDigits();
+  if (t.mm != clockDrawnMin) clockDynamic(cfg.clockStyle < CLOCK_STYLES ? cfg.clockStyle : 0);
 }
 
 void drawTogetherPage() {
