@@ -497,8 +497,19 @@ void drawClockStatic(uint8_t st) {
       tft.drawFastHLine(24, 164, 192, COL_LINE);
       if (wx.ok) {
         drawWxIcon(k, 48, 198);
-        drawTemp(84, 214, COL_FG, COL_FG, F_MID);
-        wxCondLine(b, sizeof b); tt(b, 216 - txtW(b, F_CN), 214, COL_DIM, F_CN);
+        int x0 = drawTemp(84, 214, COL_FG, COL_FG, F_MID);
+        const char* cond = wxText(k);
+        if (cfg.city[0]) {   // 天气和城市分两行，右对齐；城市太长就从末尾截掉，不压到温度
+          char city[24]; safeCopy(city, sizeof city, cfg.city);
+          int avail = 216 - (x0 + 6);
+          while (city[0] && txtW(city, F_CN) > avail) {
+            int n = strlen(city) - 1;
+            while (n > 0 && (((uint8_t)city[n]) & 0xC0) == 0x80) n--;
+            city[n] = 0;
+          }
+          tt(cond, 216 - txtW(cond, F_CN), 200, COL_DIM, F_CN);
+          tt(city, 216 - txtW(city, F_CN), 220, COL_DIM, F_CN);
+        } else tt(cond, 216 - txtW(cond, F_CN), 210, COL_DIM, F_CN);
       } else wxLoading(204);
     }
   }
