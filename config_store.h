@@ -17,7 +17,7 @@ struct Config {
   uint8_t slideSec = 8;                          // 每页停留秒数
   uint8_t nightStart = 22, nightEnd = 7;         // 夜间时段
   uint8_t bright = 100, nightBright = 10;        // 亮度百分比
-  uint8_t clockStyle = 0;                        // 时钟页样式 0..7，0=超大数字（默认）
+  uint8_t clockStyle = 0;                        // 时钟页样式 0..5，0=超大数字（默认）
   uint8_t lang = 0;                              // 0=中文 1=English，屏幕和网页共用
   char  pass[16] = "";                           // 设置页密码，空表示不设
   char  testDate[11] = "";                       // 测试用：假装今天是这一天
@@ -84,7 +84,7 @@ void applyJson(JsonObject o) {
   if (o.containsKey("nightEnd")) cfg.nightEnd = constrain((int)(o["nightEnd"] | 7), 0, 23);
   if (o.containsKey("bright")) cfg.bright = constrain((int)(o["bright"] | 100), 5, 100);
   if (o.containsKey("nightBright")) cfg.nightBright = constrain((int)(o["nightBright"] | 10), 0, 100);
-  if (o.containsKey("cs")) cfg.clockStyle = constrain((int)(o["cs"] | 0), 0, 7);
+  if (o.containsKey("cs")) cfg.clockStyle = constrain((int)(o["cs"] | 0), 0, 5);
   if (o.containsKey("lang")) cfg.lang = constrain((int)(o["lang"] | 0), 0, 1);
   if (o.containsKey("pass")) safeCopy(cfg.pass, sizeof cfg.pass, o["pass"] | "");
   if (o.containsKey("newPass")) safeCopy(cfg.pass, sizeof cfg.pass, o["newPass"] | "");

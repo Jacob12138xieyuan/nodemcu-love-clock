@@ -282,9 +282,9 @@ uint8_t nextPage(uint8_t p) {
 const char* dayUnit(long n) { return EN() ? (n == 1 ? "day" : "days") : "天"; }
 int unitW(const char* u) { return EN() ? txtW(u, F_CN) * 2 : 32; }
 
-// ================= 时钟页：8 种样式（cfg.clockStyle：0=A 默认）=================
-// 0 A 超大数字  1 B 上下分行  2 C 圆润卡片  3 D 表盘  4 E 进度信息  5 F 复古数码  6 G 爱心  7 H 极简
-#define CLOCK_STYLES 8
+// ================= 时钟页：6 种样式（cfg.clockStyle：0=A 默认）=================
+// 0 A 超大数字  1 B 上下分行  2 C 圆润卡片  3 D 表盘  4 E 进度信息  5 F 爱心
+#define CLOCK_STYLES 6
 #define F_L62  u8g2_font_logisoso62_tn
 #define F_FUB49 u8g2_font_fub49_tn
 #define F_FUB35 u8g2_font_fub35_tf
@@ -292,10 +292,8 @@ int unitW(const char* u) { return EN() ? txtW(u, F_CN) * 2 : 32; }
 #define F_FUB25 u8g2_font_fub25_tf
 #define F_FUB20 u8g2_font_fub20_tf
 #define F_FUB14 u8g2_font_fub14_tf
-#define F_SEG  u8g2_font_7Segments_26x42_mn
 
 const uint16_t COL_LINE = C565(60, 60, 72), COL_CARD = C565(28, 30, 40);
-const uint16_t COL_AMB = C565(255, 170, 0), COL_AMB_D = C565(52, 34, 0), COL_AMB_L = C565(150, 100, 20);
 
 // 透明背景写字（putTxt 是实心背景，卡片和爱心上要用这个）
 void tt(const char* s, int x, int y, uint16_t col, const uint8_t* font) {
@@ -406,18 +404,9 @@ void clockDynamic(uint8_t st) {
       snprintf(b, sizeof b, EN() ? "Today %d%%" : "今天已过 %d%%", pct);
       ttC(b, 152, COL_DIM, F_CN);
       break; }
-    case 5: { // F 复古数码：先画满笔画的暗色 88:88，再叠上亮色的时间
-      int w = txtW("88:88", F_SEG);
-      tt("88:88", 120 - w / 2, 118, COL_AMB_D, F_SEG);
-      clockTimeStr(b, col, COL_AMB); tt(b, 120 - w / 2, 118, col == COL_DIM ? COL_AMB_L : col, F_SEG);
-      break; }
-    case 6:   // G 爱心
+    case 5:   // F 爱心
       tft.fillRect(62, 76, 116, 30, COL_PINK);
       clockTimeStr(b, col, COL_FG); ttC(b, 102, col, F_FUB35);
-      break;
-    case 7:   // H 极简
-      tft.fillRect(0, 50, 240, 90, COL_BG);
-      clockTimeStr(b, col, C565(225, 225, 232)); ttC(b, 134, col, F_HUGE);
       break;
     default:  // A 超大数字
       tft.fillRect(0, 64, 240, 92, COL_BG);
@@ -492,16 +481,7 @@ void drawClockStatic(uint8_t st) {
         wxCondLine(b, sizeof b); tt(b, x + 8, 222, COL_DIM, F_CN);
       } else wxLoading(220);
       break; }
-    case 5: { // F
-      tft.drawRoundRect(14, 52, 212, 104, 10, COL_AMB_L); tft.drawRoundRect(15, 53, 210, 102, 9, COL_AMB_L);
-      dateFull(b, sizeof b); ttC(b, 36, COL_AMB, F_CN);
-      tft.drawFastHLine(14, 180, 212, COL_AMB_L);
-      if (wx.ok) {
-        drawTemp(22, 216, COL_AMB, COL_AMB_L, F_FUB25);
-        wxCondLine(b, sizeof b); tt(b, 218 - txtW(b, F_CN), 214, COL_AMB, F_CN);
-      } else ttC(TR("天气获取中…", "Loading weather..."), 210, COL_AMB_L, F_CN);
-      break; }
-    case 6: { // G
+    case 5: { // F 爱心
       drawHeart(120, 62, 46, COL_PINK);
       drawHeart(16, 26, 5, COL_GOLD); drawHeart(224, 22, 4, COL_PINK); drawHeart(216, 168, 5, COL_GOLD); drawHeart(24, 168, 4, COL_PINK);
       dateFull(b, sizeof b); ttC(b, 208, COL_FG, F_CN);
@@ -511,10 +491,6 @@ void drawClockStatic(uint8_t st) {
         ttC(b, 232, COL_DIM, F_CN);
       } else wxLoading(232);
       break; }
-    case 7:   // H
-      drawHeart(120, 176, 4, COL_PINK);
-      dateFull(b, sizeof b); ttC(b, 214, COL_DIM, F_CN);
-      break;
     default: { // A
       drawHeart(120, 18, 4, COL_PINK);
       dateFull(b, sizeof b); ttC(b, 52, COL_DIM, F_CN);
